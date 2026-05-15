@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -35,12 +36,10 @@ model Player {
   squads      SquadMember[]
 }
 
-model SquadMember {
-  id        String @id @default(uuid())
-  roomId    String
-  playerId  String
-  buyerId   String
-  price     Float
-  room      Room   @relation(fields: [roomId], references: [id])
-  player    Player @relation(fields: [playerId], references: [id])
+model Player {
+  id        String   @id @default(uuid())
+  name      String
+  role      String
+  country   String?  // The "?" makes it optional
+  // ... rest of the fields
 }
