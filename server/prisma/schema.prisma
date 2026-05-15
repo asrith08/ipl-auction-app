@@ -9,22 +9,22 @@ datasource db {
 }
 
 model Room {
-  id          String   @id @default(uuid())
+  id          String         @id @default(uuid())
   name        String
-  isPrivate   Boolean  @default(false)
+  isPrivate   Boolean        @default(false)
   hostId      String
-  purse       Int      @default(120)
-  squadSize   Int      @default(25)
-  bidTimer    Int      @default(10)
-  createdAt   DateTime @default(now())
+  purse       Int            @default(120)
+  squadSize   Int            @default(25)
+  bidTimer    Int            @default(10)
+  createdAt   DateTime       @default(now())
   squads      SquadMember[]
 }
 
 model Player {
-  id          String   @id @default(uuid())
+  id          String         @id @default(uuid())
   name        String
   role        String
-  country     String
+  country     String?        // Optional field
   basePrice   Float
   category    String
   overseas    Boolean
@@ -36,10 +36,25 @@ model Player {
   squads      SquadMember[]
 }
 
-model Player {
+// This connects the Player to the Room (The Squad)
+model SquadMember {
+  id        String   @id @default(uuid())
+  
+  // Link to Player
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  
+  // Link to Room (Auction)
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+
+  // You can add fields like 'boughtPrice' or 'ownerName' here later
+  createdAt DateTime @default(now())
+}
+
+// Kept this in case you use it for historical records
+model Auction {
   id        String   @id @default(uuid())
   name      String
-  role      String
-  country   String?  // The "?" makes it optional
-  // ... rest of the fields
+  createdAt DateTime @default(now())
 }
