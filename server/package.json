@@ -4,8 +4,10 @@
   "description": "IPL Auction Server",
   "main": "index.ts",
   "scripts": {
-    "dev": "nodemon index.ts"
-  },
+  "build": "tsc",
+  "start": "node dist/index.js",
+  "dev": "ts-node-dev index.ts"
+},
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "cors": "^2.8.5",
