@@ -12,7 +12,6 @@ app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 
-// FIX 1: Changed route path to '/api/players' to perfectly match your frontend fetch target URL!
 app.get('/api/players', (req, res) => {
   res.json(players);
 });
@@ -24,7 +23,7 @@ const io = new Server(httpServer, {
 
 interface Room {
   id: string;
-  host: string;
+  host: string | null;
   players: { id: string; username: string }[];
   settings: {
     purse: number;
@@ -32,6 +31,7 @@ interface Room {
     bidTimer: number;
     isPrivate?: boolean;
     password?: string;
+    customRoomLabel?: string;
   };
   auctionQueue: Player[];
   currentIndex: number;
@@ -105,27 +105,27 @@ const startTimer = (roomId: string) => {
 io.on("connection", (socket: Socket) => {
   console.log('User connected:', socket.id);
 
-  // CREATE ROOM
+  // CREATE ROOM WORKSPACE SHELL
   socket.on("create-room", (data: { settings: any, username?: string }) => {
     const roomId = uuid();
     const initialPurse = data.settings?.purse || 120;
-    const hostName = data.username || "Host Auctioneer";
 
     activeRooms[roomId] = {
       id: roomId,
-      host: socket.id,
-      players: [{ id: socket.id, username: hostName }],
+      host: null, // Host is explicitly assigned when the first clean verified user hooks in
+      players: [], 
       settings: {
         purse: initialPurse,
         squadSize: data.settings?.squadSize || 18,
         bidTimer: 10,
-        isPrivate: data.settings?.isPrivate || false,
-        password: data.settings?.password || ""
+        isPrivate: true,
+        password: "", // Set dynamically by the first user inside verification gate
+        customRoomLabel: data.settings?.customRoomLabel || "Auction Room"
       },
       auctionQueue: generateRandomAuctionList(),
       currentIndex: 0,
-      purse: { [socket.id]: initialPurse },
-      squads: { [socket.id]: [] },
+      purse: {},
+      squads: {},
       currentBid: 0,
       highestBidder: "Base Price",
       highestBidderId: null,
@@ -135,44 +135,26 @@ io.on("connection", (socket: Socket) => {
       interval: null
     };
     
-    socket.join(roomId);
     socket.emit("room-created", roomId);
-    socket.emit("room-update", activeRooms[roomId]);
   });
 
-  // JOIN ROOM
-  socket.on("join-room", ({ roomId, username, password, bypassPassword }) => {
+  // CLEAN JOIN-ROOM HANDLER 
+  socket.on("join-room", ({ roomId, username, password }) => {
     const room = activeRooms[roomId];
     if (!room) return socket.emit("error-message", "Room not found");
 
-    // FIX 2: If the host is matching back into their own room via the auto-join router link,
-    // seamlessly re-map their active socket connection information instead of rejecting or cloning them!
-    const existingPlayerIndex = room.players.findIndex(p => p.username === username);
-    
-    if (existingPlayerIndex !== -1) {
-      // If it's the host or the same player refreshing/re-joining, update their socket reference cleanly
-      const oldId = room.players[existingPlayerIndex].id;
-      room.players[existingPlayerIndex].id = socket.id;
-      
-      // Transfer state memory buckets across IDs safely
-      room.purse[socket.id] = room.purse[oldId] ?? room.settings.purse;
-      room.squads[socket.id] = room.squads[oldId] ?? [];
-      
-      if (room.host === oldId) {
-        room.host = socket.id;
-      }
-
-      socket.join(roomId);
-      return io.to(roomId).emit("room-update", room);
-    }
-
-    if (room.settings.isPrivate && !bypassPassword) {
+    // First person to hit this logic loop acts as the primary Administrator/Host
+    if (room.players.length === 0) {
+      room.host = socket.id;
+      room.settings.password = password; // Set room password definition instantly
+    } else {
+      // For all following connections, check against the set password
       if (room.settings.password !== password) {
         return socket.emit("error-message", "Incorrect Room Password");
       }
+      if (room.players.length >= 10) return socket.emit("error-message", "Room is full");
+      if (room.players.find(p => p.username === username)) return socket.emit("error-message", "Name taken");
     }
-
-    if (room.players.length >= 10) return socket.emit("error-message", "Room is full");
 
     const newPlayer = { id: socket.id, username };
     room.players.push(newPlayer);
