@@ -4,30 +4,32 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Room {
-  id          String         @id @default(uuid())
-  name        String
-  isPrivate   Boolean        @default(false)
-  hostId      String
-  purse       Int            @default(120)
-  squadSize   Int            @default(25)
-  bidTimer    Int            @default(10)
-  createdAt   DateTime       @default(now())
-  squads      SquadMember[]
+  id        String        @id @default(uuid())
+  name      String
+  isPrivate Boolean       @default(false)
+  hostId    String
+  purse     Int           @default(120)
+  squadSize Int           @default(25)
+  bidTimer  Int           @default(10)
+  createdAt DateTime      @default(now())
+  squads    SquadMember[]
 }
 
 model Player {
-  id          String         @id @default(uuid())
+  id          String        @id @default(uuid())
   name        String
   role        String
-  country     String?        // Optional field
-  basePrice   Float
+  country     String?       // Optional field
+  basePrice   Int           // Changed to Int to match SquadMember pricing perfectly
   category    String
   overseas    Boolean
+  nationality String
   batting     Int
   bowling     Int
   fielding    Int
@@ -36,7 +38,7 @@ model Player {
   squads      SquadMember[]
 }
 
-// This connects the Player to the Room (The Squad)
+// This connects the Player to the Room (The Squad) and tracks the buyer
 model SquadMember {
   id        String   @id @default(uuid())
   
@@ -47,8 +49,11 @@ model SquadMember {
   // Link to Room (Auction)
   roomId    String
   room      Room     @relation(fields: [roomId], references: [id])
-
-  // You can add fields like 'boughtPrice' or 'ownerName' here later
+  
+  // Track who bought the player (Matches your teamId/buyerId socket backend logic!)
+  buyerId   String
+  
+  price     Int
   createdAt DateTime @default(now())
 }
 
