@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import { v4 as uuid } from 'uuid';
-import { Player, players } from './data/players'; // Ensured players is correctly imported
+import { Player, players } from './data/players'; 
 import { generateRandomAuctionList } from "./utils/auctionUtils";
 import authRoutes from "./routes/auth";
 
@@ -12,8 +12,8 @@ app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 
-// Corrected Express route definition for players
-app.get('/players', (req, res) => {
+// FIX 1: Changed route path to '/api/players' to perfectly match your frontend fetch target URL!
+app.get('/api/players', (req, res) => {
   res.json(players);
 });
 
@@ -48,10 +48,6 @@ interface Room {
 
 const activeRooms: Record<string, Room> = {};
 
-/**
- * HELPER: Finalizes the hammer for the current player
- * Triggers Sold/Unsold events and checks if the full auction is complete.
- */
 const finalizePlayerHammer = (roomId: string) => {
   const room = activeRooms[roomId];
   if (!room) return;
@@ -62,7 +58,6 @@ const finalizePlayerHammer = (roomId: string) => {
     const finalPrice = room.currentBid;
     const playerSold = room.currentPlayer;
 
-    // Safety check to avoid NaN calculation bugs if a state properties drops
     if (room.purse[buyerId] !== undefined) {
       room.purse[buyerId] -= finalPrice;
       room.squads[buyerId].push({ ...playerSold, basePrice: finalPrice });
@@ -79,7 +74,6 @@ const finalizePlayerHammer = (roomId: string) => {
 
   room.currentPlayer = null;
 
-  // --- CHECK IF AUCTION IS COMPLETE ---
   if (room.currentIndex >= room.auctionQueue.length) {
     io.to(roomId).emit("auction-complete", room);
   } else {
@@ -87,9 +81,6 @@ const finalizePlayerHammer = (roomId: string) => {
   }
 };
 
-/**
- * HELPER: Starts the 10-second ticker and the final timeout
- */
 const startTimer = (roomId: string) => {
   const room = activeRooms[roomId];
   if (!room) return;
@@ -123,18 +114,16 @@ io.on("connection", (socket: Socket) => {
     activeRooms[roomId] = {
       id: roomId,
       host: socket.id,
-      // FIX 1: Host is explicitly added to the players lineup so the room doesn't think it's empty
       players: [{ id: socket.id, username: hostName }],
       settings: {
         purse: initialPurse,
         squadSize: data.settings?.squadSize || 18,
-        bidTimer: 10, // Fixed at 10s per your requirement
+        bidTimer: 10,
         isPrivate: data.settings?.isPrivate || false,
         password: data.settings?.password || ""
       },
       auctionQueue: generateRandomAuctionList(),
       currentIndex: 0,
-      // FIX 2: Initialize allocation structures for the host socket safely to avoid backend mapping crashes
       purse: { [socket.id]: initialPurse },
       squads: { [socket.id]: [] },
       currentBid: 0,
@@ -148,8 +137,6 @@ io.on("connection", (socket: Socket) => {
     
     socket.join(roomId);
     socket.emit("room-created", roomId);
-    
-    // Automatically transmit initialization packet to the host interface
     socket.emit("room-update", activeRooms[roomId]);
   });
 
@@ -158,6 +145,27 @@ io.on("connection", (socket: Socket) => {
     const room = activeRooms[roomId];
     if (!room) return socket.emit("error-message", "Room not found");
 
+    // FIX 2: If the host is matching back into their own room via the auto-join router link,
+    // seamlessly re-map their active socket connection information instead of rejecting or cloning them!
+    const existingPlayerIndex = room.players.findIndex(p => p.username === username);
+    
+    if (existingPlayerIndex !== -1) {
+      // If it's the host or the same player refreshing/re-joining, update their socket reference cleanly
+      const oldId = room.players[existingPlayerIndex].id;
+      room.players[existingPlayerIndex].id = socket.id;
+      
+      // Transfer state memory buckets across IDs safely
+      room.purse[socket.id] = room.purse[oldId] ?? room.settings.purse;
+      room.squads[socket.id] = room.squads[oldId] ?? [];
+      
+      if (room.host === oldId) {
+        room.host = socket.id;
+      }
+
+      socket.join(roomId);
+      return io.to(roomId).emit("room-update", room);
+    }
+
     if (room.settings.isPrivate && !bypassPassword) {
       if (room.settings.password !== password) {
         return socket.emit("error-message", "Incorrect Room Password");
@@ -165,7 +173,6 @@ io.on("connection", (socket: Socket) => {
     }
 
     if (room.players.length >= 10) return socket.emit("error-message", "Room is full");
-    if (room.players.find(p => p.username === username)) return socket.emit("error-message", "Name taken");
 
     const newPlayer = { id: socket.id, username };
     room.players.push(newPlayer);
@@ -204,7 +211,6 @@ io.on("connection", (socket: Socket) => {
     const room = activeRooms[roomId];
     if (!room || !room.currentPlayer) return;
 
-    // Direct mapping safeguard validation
     if (!room.purse[socket.id] || amount > room.purse[socket.id]) {
       socket.emit("error-message", "Insufficient funds!");
       return;
@@ -224,7 +230,6 @@ io.on("connection", (socket: Socket) => {
 
   socket.on("disconnect", () => {
     console.log("User disconnected", socket.id);
-    // Cleanup reference variables loops across isolated disconnected users if needed
   });
 });
 
