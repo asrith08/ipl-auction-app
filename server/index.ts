@@ -112,14 +112,14 @@ io.on("connection", (socket: Socket) => {
 
     activeRooms[roomId] = {
       id: roomId,
-      host: null, // Host is explicitly assigned when the first clean verified user hooks in
+      host: null, 
       players: [], 
       settings: {
         purse: initialPurse,
         squadSize: data.settings?.squadSize || 18,
         bidTimer: 10,
         isPrivate: true,
-        password: "", // Set dynamically by the first user inside verification gate
+        password: "", 
         customRoomLabel: data.settings?.customRoomLabel || "Auction Room"
       },
       auctionQueue: generateRandomAuctionList(),
@@ -138,17 +138,17 @@ io.on("connection", (socket: Socket) => {
     socket.emit("room-created", roomId);
   });
 
-  // CLEAN JOIN-ROOM HANDLER 
+  // CLEAN JOIN-ROOM HANDLER WITH INVITATION SUPPORT
   socket.on("join-room", ({ roomId, username, password }) => {
     const room = activeRooms[roomId];
     if (!room) return socket.emit("error-message", "Room not found");
 
-    // First person to hit this logic loop acts as the primary Administrator/Host
+    // First person to connect sets up the structural access key variables
     if (room.players.length === 0) {
       room.host = socket.id;
-      room.settings.password = password; // Set room password definition instantly
+      room.settings.password = password; 
     } else {
-      // For all following connections, check against the set password
+      // Validate the password token safely for subsequent guests
       if (room.settings.password !== password) {
         return socket.emit("error-message", "Incorrect Room Password");
       }
