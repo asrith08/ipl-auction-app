@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import { v4 as uuid } from 'uuid';
-import { Player } from './data/players';
+import { Player, players } from './data/players'; // Ensured players is correctly imported
 import { generateRandomAuctionList } from "./utils/auctionUtils";
 import authRoutes from "./routes/auth";
 
@@ -11,6 +11,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
+
+// Corrected Express route definition for players
+app.get('/players', (req, res) => {
+  res.json(players);
+});
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -57,8 +62,11 @@ const finalizePlayerHammer = (roomId: string) => {
     const finalPrice = room.currentBid;
     const playerSold = room.currentPlayer;
 
-    room.purse[buyerId] -= finalPrice;
-    room.squads[buyerId].push({ ...playerSold, basePrice: finalPrice });
+    // Safety check to avoid NaN calculation bugs if a state properties drops
+    if (room.purse[buyerId] !== undefined) {
+      room.purse[buyerId] -= finalPrice;
+      room.squads[buyerId].push({ ...playerSold, basePrice: finalPrice });
+    }
 
     io.to(roomId).emit("player-sold", {
       buyerName: buyerName,
@@ -107,14 +115,18 @@ io.on("connection", (socket: Socket) => {
   console.log('User connected:', socket.id);
 
   // CREATE ROOM
-  socket.on("create-room", (data: { settings: any }) => {
+  socket.on("create-room", (data: { settings: any, username?: string }) => {
     const roomId = uuid();
+    const initialPurse = data.settings?.purse || 120;
+    const hostName = data.username || "Host Auctioneer";
+
     activeRooms[roomId] = {
       id: roomId,
       host: socket.id,
-      players: [],
+      // FIX 1: Host is explicitly added to the players lineup so the room doesn't think it's empty
+      players: [{ id: socket.id, username: hostName }],
       settings: {
-        purse: data.settings?.purse || 120,
+        purse: initialPurse,
         squadSize: data.settings?.squadSize || 18,
         bidTimer: 10, // Fixed at 10s per your requirement
         isPrivate: data.settings?.isPrivate || false,
@@ -122,8 +134,9 @@ io.on("connection", (socket: Socket) => {
       },
       auctionQueue: generateRandomAuctionList(),
       currentIndex: 0,
-      purse: {},
-      squads: {},
+      // FIX 2: Initialize allocation structures for the host socket safely to avoid backend mapping crashes
+      purse: { [socket.id]: initialPurse },
+      squads: { [socket.id]: [] },
       currentBid: 0,
       highestBidder: "Base Price",
       highestBidderId: null,
@@ -132,8 +145,12 @@ io.on("connection", (socket: Socket) => {
       timer: null,
       interval: null
     };
+    
     socket.join(roomId);
     socket.emit("room-created", roomId);
+    
+    // Automatically transmit initialization packet to the host interface
+    socket.emit("room-update", activeRooms[roomId]);
   });
 
   // JOIN ROOM
@@ -178,7 +195,6 @@ io.on("connection", (socket: Socket) => {
       
       startTimer(roomId);
     } else {
-      // If no players are left in queue
       io.to(roomId).emit("auction-complete", room);
     }
   });
@@ -188,7 +204,8 @@ io.on("connection", (socket: Socket) => {
     const room = activeRooms[roomId];
     if (!room || !room.currentPlayer) return;
 
-    if (amount > room.purse[socket.id]) {
+    // Direct mapping safeguard validation
+    if (!room.purse[socket.id] || amount > room.purse[socket.id]) {
       socket.emit("error-message", "Insufficient funds!");
       return;
     }
@@ -207,6 +224,7 @@ io.on("connection", (socket: Socket) => {
 
   socket.on("disconnect", () => {
     console.log("User disconnected", socket.id);
+    // Cleanup reference variables loops across isolated disconnected users if needed
   });
 });
 
